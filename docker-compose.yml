@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: isisai-postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: always
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${DATABASE_NAME:-isisai}
+      - POSTGRES_USER=${DATABASE_USER:-postgres}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD:-postgres}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - isisai-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: isisai-redis
+    volumes:
+      - redis-data:/data
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - isisai-network
+
+  backend:
+    build:
+      context: ./backend_polpa_ml
+      dockerfile: Dockerfile
+    container_name: isisai-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-isisai}
+      - POSTGRES_USER=${DATABASE_USER:-postgres}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - POSTGRES_DB=${DATABASE_NAME:-isisai}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+      - API_CAMBIO=${API_CAMBIO:-https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL}
+      - MODEL_VERSION=${MODEL_VERSION:-0.1.0}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-linear_regression}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    networks:
+      - isisai-network
+
+  migrator:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./pred-custos/prisma:/app/prisma
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-isisai}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - ADMIN_NAME=${ADMIN_NAME:-Administrador}
+    command: sh -c "npm install -g prisma@6.15.0 ts-node typescript && npm install bcryptjs @prisma/client && npx prisma generate && npx prisma db push --skip-generate && ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - isisai-network
+
+  frontend:
+    build:
+      context: ./pred-custos
+      dockerfile: Dockerfile
+    container_name: isisai-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-isisai}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      - PY_BACKEND_URL=${PY_BACKEND_URL:-http://backend:8000}
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - REFRESH_TOKEN_TTL_DAYS=${REFRESH_TOKEN_TTL_DAYS:-7}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - ADMIN_NAME=${ADMIN_NAME:-Administrador}
+      - REDIS_URL=redis://redis:6379
+      - USE_QUEUE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: always
+    networks:
+      - isisai-network
+
+networks:
+  isisai-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
