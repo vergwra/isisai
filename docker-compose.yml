@@ -41,6 +41,8 @@ services:
       context: ./backend_polpa_ml
       dockerfile: Dockerfile
     container_name: isisai-backend
+    volumes:
+      - ./backend_polpa_ml/data:/app/data
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:

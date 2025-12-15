@@ -44,6 +44,18 @@ export async function POST(request: NextRequest) {
     // Parse do payload
     const payload = await request.json()
 
+    // Validamos o payload usando o schema (agora para ambos os fluxos)
+    const validationResult = createPredictionSchema.safeParse(payload)
+
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: "Validation error", details: validationResult.error.format() },
+        { status: 400 }
+      )
+    }
+
+    const data = validationResult.data
+
     // URL do backend FastAPI - usando variável de ambiente ou valor padrão
     const PY_BACKEND_URL = process.env.PY_BACKEND_URL || 'http://localhost:8000'
 
@@ -55,18 +67,6 @@ export async function POST(request: NextRequest) {
       try {
         // Import dinâmico para evitar carregamento quando não é necessário
         const { enqueuePrediction } = await import('@/server/jobs/queue')
-
-        // Validamos o payload usando o schema
-        const validationResult = createPredictionSchema.safeParse(payload)
-
-        if (!validationResult.success) {
-          return NextResponse.json(
-            { error: "Validation error", details: validationResult.error.format() },
-            { status: 400 }
-          )
-        }
-
-        const data = validationResult.data
 
         // Criar previsão com status PENDING
         const prediction = await predictionService.createPrediction({
@@ -106,42 +106,88 @@ export async function POST(request: NextRequest) {
         )
       }
     } else {
-      // Fluxo síncrono: proxy direto para o FastAPI
+      // Fluxo síncrono: proxy direto para o FastAPI, mas persistindo o resultado
       try {
+        // 1. Criar registro da previsão (PENDING) para ter um ID
+        const prediction = await predictionService.createPrediction({
+          userId: user.id,
+          volumeTon: data.volume_ton,
+          currency: data.output_currency,
+          inputJson: data, // Salvamos o payload validado completo
+          leadTimeDays: data.lead_time_days,
+          fuelIndex: data.fuel_index,
+          taxMultiplier: data.taxes_pct ? (data.taxes_pct / 100) + 1 : undefined
+        })
+
         // Construir a URL completa para o endpoint de predição
         const url = `${PY_BACKEND_URL}/api/v1/predict`
 
-        // Realizar chamada server-to-server para o FastAPI
+        // 2. Realizar chamada server-to-server para o FastAPI
         const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(data) // Usando dados validados
         })
 
+        if (!response.ok) {
+          // Se falhar, marcar como erro no banco
+          const errorText = await response.text()
+          await predictionService.markError(prediction.id, `Backend error: ${response.status} - ${errorText}`)
+
+          throw new Error(`Backend responded with ${response.status}: ${errorText}`)
+        }
+
         // Obter resposta como JSON
-        const data = await response.json()
+        const responseData = await response.json()
+
+        // 3. Atualizar previsão com o resultado (COMPLETED)
+        // Calcular custo por kg (estimativa simples baseada no total / volume em kg)
+        // volume_ton * 1000 = kg
+        const volumeKg = data.volume_ton * 1000
+
+        // Mapear campos da resposta do backend (PredictResponse)
+        // O backend retorna: { cost: number, currency: string, breakdown: { ... } }
+        const costTotal = responseData.cost || responseData.estimated_cost || 0
+        const unitCost = volumeKg > 0 ? costTotal / volumeKg : 0
+
+        const breakdown = responseData.breakdown || {}
+
+        await predictionService.markCompleted(prediction.id, {
+          costTotal: costTotal,
+          euroPerKg: unitCost,
+          outputJson: responseData,
+          modelUsed: breakdown.model_used || responseData.model_used,
+          modelVersion: breakdown.version || responseData.version,
+          artifactPath: breakdown.artifact_path || responseData.artifact_path
+        })
 
         // Log de sucesso
         logger.info({
-          operation: 'create_prediction_proxy',
+          operation: 'create_prediction_sync_saved',
           status: response.status,
+          predictionId: prediction.id,
           userId: user.id
         })
 
-        // Retornar resposta do FastAPI com o mesmo status
-        return NextResponse.json(data, { status: response.status })
+        // Retornar resposta combinando dados do banco (ID) e do backend
+        return NextResponse.json({
+          ...responseData,
+          id: prediction.id, // Importante: retornar o ID para o frontend redirecionar
+          status: "COMPLETED"
+        }, { status: 200 })
+
       } catch (error) {
         // Log de erro
         logger.error({
-          operation: 'create_prediction_proxy_error',
+          operation: 'create_prediction_sync_error',
           error: error instanceof Error ? error.message : String(error)
         })
 
         // Erro 502 Bad Gateway para problemas com o servidor upstream
         return NextResponse.json(
-          { error: "Failed to connect to prediction service", details: error instanceof Error ? error.message : String(error) },
+          { error: "Failed to process prediction", details: error instanceof Error ? error.message : String(error) },
           { status: 502 }
         )
       }

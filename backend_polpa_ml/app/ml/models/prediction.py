@@ -77,12 +77,21 @@ class CustoModel(BaseModel):
         # Se a versão não for especificada, usamos a padrão das configurações
         if not version:
             version = settings.MODEL_VERSION
+        
+        # Garantir que model_name seja string (pode ser enum)
+        # Verifica primeiro se tem atributo value (para Enums)
+        if hasattr(model_name, 'value'):
+            model_name_str = model_name.value
+        elif isinstance(model_name, str):
+            model_name_str = model_name
+        else:
+            model_name_str = str(model_name)
             
         # Criar instância do modelo
-        model_instance = cls(model_type=model_name)
+        model_instance = cls(model_type=model_name_str)
         
         # Construir caminho do artefato
-        artifact_path = settings.MODELS_DIR / f"modelo_custo_{version}_{model_name}.joblib"
+        artifact_path = settings.MODELS_DIR / f"modelo_custo_{version}_{model_name_str}.joblib"
         
         # Verificar se o artefato existe
         artifact_exists = artifact_path.exists()
@@ -145,7 +154,27 @@ class CustoModel(BaseModel):
             X_df = pd.DataFrame([{col: row_full.get(col, None) for col in expected_cols}])
             logger.info(f"Input dataframe columns: {list(X_df.columns)}")
 
-            # 4) Predição (pipeline do scikit)
+            # 4) Encoding e Predição
+            # Se tivermos um processador salvo, usamos ele para transformar os dados
+            if model_instance.processor:
+                logger.info("Aplicando encoding com processador salvo")
+                X_df = model_instance.processor.transform(X_df)
+            else:
+                logger.warning("Nenhum processador salvo encontrado. Tentando usar FeatureProcessor padrão (pode falhar se houver strings)")
+                # Tentar usar um processador novo (fallback perigoso, mas melhor que nada)
+                from ..preprocessing.features import FeatureProcessor
+                proc = FeatureProcessor()
+                # O transform do FeatureProcessor tem um fallback de hash para colunas não treinadas
+                X_df = proc.transform(X_df)
+
+            # Garantir que é float
+            try:
+                X_df = X_df.astype(float)
+            except Exception as e:
+                logger.error(f"Falha ao converter input para float: {e}")
+                # Se falhar, vamos tentar converter apenas o que der
+                pass
+
             pred_value = float(model_instance.model.predict(X_df)[0])
 
             # 5) Ajuste de unidade do alvo
@@ -278,7 +307,7 @@ class CustoModel(BaseModel):
         Treina o modelo com novos dados.
         
         Args:
-            X: Features
+            X: Features (DataFrame com colunas categóricas e numéricas)
             y: Target (custo)
             
         Returns:
@@ -286,11 +315,76 @@ class CustoModel(BaseModel):
         """
         from sklearn.model_selection import train_test_split
         from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        from ..preprocessing.features import FeatureProcessor
         
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        logger.info(f"Iniciando treinamento com {len(X)} amostras")
+        logger.info(f"Colunas recebidas: {X.columns.tolist()}")
+        logger.info(f"Tipos originais: {X.dtypes.to_dict()}")
+        
+        # Calcular period_days se as colunas de data existirem
+        if 'period_start' in X.columns and 'period_end' in X.columns:
+            logger.info("Calculando period_days a partir de period_start e period_end")
+            X['period_days'] = (
+                pd.to_datetime(X['period_end'], format='%Y/%m/%d') - 
+                pd.to_datetime(X['period_start'], format='%Y/%m/%d')
+            ).dt.days
+            # Remover as colunas de data originais
+            X = X.drop(['period_start', 'period_end'], axis=1)
+            logger.info(f"period_days calculado. Colunas após remoção de datas: {X.columns.tolist()}")
+        
+        # Remover outras colunas não utilizadas como features
+        cols_to_remove = ['model_name', 'output_currency']
+        for col in cols_to_remove:
+            if col in X.columns:
+                X = X.drop(col, axis=1)
+                logger.info(f"Coluna '{col}' removida")
+        
+        # Aplicar encoding nas colunas categóricas
+        processor = FeatureProcessor()
+        X_encoded = processor.fit_transform(X)
+        self.processor = processor  # Salvar o processador treinado
+        
+        logger.info(f"Dados após encoding: {X_encoded.shape}")
+        logger.info(f"Tipos após encoding: {X_encoded.dtypes.to_dict()}")
+        logger.info(f"Amostra dos dados:\n{X_encoded.head()}")
+        
+        # Converter para float (os dados já devem estar numéricos após o encoding)
+        try:
+            X_encoded = X_encoded.astype(float)
+            logger.info("Conversão para float bem-sucedida")
+        except Exception as e:
+            logger.error(f"Erro ao converter para float: {str(e)}")
+            logger.error(f"Colunas problemáticas: {X_encoded.select_dtypes(include=['object']).columns.tolist()}")
+            raise ValueError(f"Erro ao converter dados para numérico: {str(e)}")
+        
+        # Remover linhas com NaN se houver
+        mask = ~(X_encoded.isna().any(axis=1) | y.isna())
+        X_encoded = X_encoded[mask]
+        y_clean = y[mask]
+        
+        if len(X_encoded) == 0:
+            raise ValueError("Nenhum dado válido após limpeza. Verifique o formato do arquivo.")
+        
+        logger.info(f"Dados após limpeza: {len(X_encoded)} amostras")
+        
+        # Ajustar test_size para datasets pequenos
+        if len(X_encoded) < 10:
+            # Para datasets muito pequenos, usar validação leave-one-out ou treinar com tudo
+            logger.warning(f"Dataset pequeno ({len(X_encoded)} amostras). Treinando com todos os dados.")
+            X_train = X_encoded
+            X_test = X_encoded  # Usar os mesmos dados para teste (não ideal, mas funcional)
+            y_train = y_clean
+            y_test = y_clean
+        else:
+            # Para datasets maiores, usar split normal
+            test_size = max(0.1, min(0.3, 2 / len(X_encoded)))  # Entre 10-30% ou mínimo 2 amostras
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_encoded, y_clean, test_size=test_size, random_state=42
+            )
+            logger.info(f"Split: {len(X_train)} treino, {len(X_test)} teste")
         
         self.model.fit(X_train, y_train)
-        self.feature_columns = X.columns.tolist()
+        self.feature_columns = X_encoded.columns.tolist()
         
         y_pred = self.model.predict(X_test)
         self.metrics = {
@@ -370,13 +464,14 @@ class CustoModel(BaseModel):
         Returns:
             Dict com métricas de performance
         """
-        logger.info(f"Carregando dados de {data_path}")
+        logger.info(f"[train_from_file] Carregando dados de {data_path}")
         
         try:
             # Carregar dados
             df = pd.read_csv(data_path)
             self.n_samples = len(df)
-            logger.info(f"Dados carregados: {self.n_samples} amostras")
+            logger.info(f"[train_from_file] Dados carregados: {self.n_samples} amostras, colunas: {df.columns.tolist()}")
+            logger.info(f"[train_from_file] Primeiras linhas:\n{df.head()}")
             
             # Separar features e target
             if "custo_total_logistico_brl" not in df.columns:
@@ -385,7 +480,10 @@ class CustoModel(BaseModel):
             X = df.drop("custo_total_logistico_brl", axis=1)
             y = df["custo_total_logistico_brl"]
             
-            # Treinar modelo
+            logger.info(f"[train_from_file] Features shape: {X.shape}, Target shape: {y.shape}")
+            logger.info(f"[train_from_file] Tipos de dados em X:\n{X.dtypes}")
+            
+            # Treinar modelo (o método train() aplicará o encoding)
             metrics = self.train(X, y)
             
             # Salvar modelo

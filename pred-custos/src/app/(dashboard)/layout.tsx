@@ -69,6 +69,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
             {user?.role === Role.ADMIN && (
               <>
+                <Link href="/admin/train" className="text-gray-700 hover:text-blue-600">
+                  Treinar Modelo
+                </Link>
                 <Link href="/admin/models" className="text-gray-700 hover:text-blue-600">
                   Modelos
                 </Link>

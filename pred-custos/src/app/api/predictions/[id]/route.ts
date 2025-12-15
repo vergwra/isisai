@@ -50,7 +50,9 @@ export async function GET(
 
     // Formatar resposta com detalhes completos da previsão
     // Usar type assertion para acessar as propriedades do JSON
-    const inputData = prediction.inputJson as { route?: any; fx_used?: Record<string, number> }
+    // Formatar resposta com detalhes completos da previsão
+    // Usar type assertion para acessar as propriedades do JSON
+    const inputData = prediction.inputJson as any
     const outputData = prediction.outputJson as { breakdown?: any } | null
 
     return NextResponse.json({
@@ -59,8 +61,11 @@ export async function GET(
       volumeTon: prediction.volumeTon,
       currency: prediction.currency,
       input: {
-        route: inputData?.route || {},
-        fxRates: inputData?.fx_used || {},
+        route: {
+          origin: inputData.origem_porto || inputData.route?.origin,
+          destination: inputData.destino_porto || inputData.route?.destination
+        },
+        fxRates: inputData.fx_used || { BRL_EUR: inputData.fx_brl_eur },
         leadTimeDays: prediction.leadTimeDays,
         fuelIndex: prediction.fuelIndex,
         taxMultiplier: prediction.taxMultiplier

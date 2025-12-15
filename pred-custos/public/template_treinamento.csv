@@ -1,0 +1,16 @@
+origem_porto,destino_porto,modal,volume_ton,tipo_produto,tipo_embalagem,container_tipo,container_tamanho,fuel_index,taxes_pct,lead_time_days,period_start,period_end,fx_brl_eur,custo_total_logistico_brl
+Paranagua,Rotterdam,maritimo,17.2,polpa de acerola,containerizado,reefer,40ft,1.2,15,56,2023/06/01,2023/06/30,5.5,109015.25
+Santos,Hamburg,maritimo,2.56,polpa de manga,containerizado,reefer,20ft,1.2,10,56,2023/07/01,2023/07/31,5.5,35354.00
+Paranagua,Rotterdam,maritimo,1.28,polpa de acerola,containerizado,reefer,20ft,1.2,12,56,2023/07/01,2023/07/31,5.5,23045.33
+Santos,Hamburg,maritimo,16.64,polpa de manga,containerizado,reefer,40ft,1.2,15,56,2023/07/01,2023/07/31,5.5,268963.48
+Paranagua,Rotterdam,maritimo,1.44,polpa de acerola,containerizado,reefer,20ft,1.2,8,56,2023/10/01,2023/10/31,5.5,23286.88
+Santos,Hamburg,maritimo,10.5,polpa de manga,containerizado,reefer,40ft,1.3,12,60,2023/08/01,2023/08/31,5.6,145000.00
+Paranagua,Rotterdam,maritimo,8.2,polpa de acerola,containerizado,reefer,40ft,1.1,14,55,2023/09/01,2023/09/30,5.4,98000.00
+Santos,Hamburg,maritimo,3.5,polpa de manga,containerizado,reefer,20ft,1.2,11,58,2023/11/01,2023/11/30,5.5,42000.00
+Paranagua,Rotterdam,maritimo,12.8,polpa de acerola,containerizado,reefer,40ft,1.4,16,54,2023/12/01,2023/12/31,5.7,152000.00
+Santos,Hamburg,maritimo,5.6,polpa de manga,containerizado,reefer,20ft,1.1,9,57,2024/01/01,2024/01/31,5.3,58000.00
+Paranagua,Rotterdam,maritimo,15.3,polpa de acerola,containerizado,reefer,40ft,1.3,13,59,2024/02/01,2024/02/29,5.6,178000.00
+Santos,Hamburg,maritimo,7.8,polpa de manga,containerizado,reefer,40ft,1.2,10,56,2024/03/01,2024/03/31,5.5,95000.00
+Paranagua,Rotterdam,maritimo,4.2,polpa de acerola,containerizado,reefer,20ft,1.1,11,55,2024/04/01,2024/04/30,5.4,48000.00
+Santos,Hamburg,maritimo,18.5,polpa de manga,containerizado,reefer,40ft,1.4,15,60,2024/05/01,2024/05/31,5.7,215000.00
+Paranagua,Rotterdam,maritimo,9.7,polpa de acerola,containerizado,reefer,40ft,1.2,12,57,2024/06/01,2024/06/30,5.5,112000.00

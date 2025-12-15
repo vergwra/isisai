@@ -50,7 +50,17 @@ class FeatureProcessor:
                     # Quando o encoder não foi treinado, usamos o método determinístico
                     df_transformed[col] = df[col].astype(str).apply(lambda x: hash(x) % 100)  # Hash módulo 100
                 else:
-                    df_transformed[col] = self.label_encoders[col].transform(df[col].astype(str))
+                    # Implementação robusta para labels desconhecidos
+                    le = self.label_encoders[col]
+                    # Criar mapa de classes conhecidas
+                    class_mapping = {label: idx for idx, label in enumerate(le.classes_)}
+                    
+                    # Função segura de transformação
+                    def safe_transform(val):
+                        return class_mapping.get(val, -1)  # Retorna -1 para desconhecidos
+                    
+                    # Aplicar transformação
+                    df_transformed[col] = df[col].astype(str).apply(safe_transform)
                 
         return df_transformed
         

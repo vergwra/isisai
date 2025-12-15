@@ -70,14 +70,30 @@ async def train_model(
             buffer.write(content)
         
         model = CustoModel(model_type=model_type)
+        
+        import time
+        start_time = time.time()
         metrics = model.train_from_file(str(temp_path))
+        training_time = time.time() - start_time
         
         temp_path.unlink()
+        
+        # Substituir NaN por None para JSON
+        clean_metrics = {}
+        for key, value in metrics.items():
+            if pd.isna(value):
+                clean_metrics[key] = None
+            else:
+                clean_metrics[key] = value
         
         return {
             "message": "Modelo treinado com sucesso",
             "model_type": model_type,
-            "metrics": metrics,
+            "model_version": settings.MODEL_VERSION,
+            "metrics": clean_metrics,
+            "n_samples": model.n_samples,
+            "training_time": round(training_time, 2),
+            "feature_importance": model.get_feature_importance() if hasattr(model, 'get_feature_importance') else {},
             "timestamp": pd.Timestamp.now().isoformat()
         }
     except Exception as e:

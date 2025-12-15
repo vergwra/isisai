@@ -14,6 +14,7 @@ class BaseModel(ABC):
     def __init__(self, name: str):
         self.name = name
         self.model = None
+        self.processor = None  # Adicionado para persistência do encoder
         self.feature_columns: List[str] = []
         self.metrics: Dict[str, float] = {}
         self.version = settings.MODEL_VERSION
@@ -26,12 +27,20 @@ class BaseModel(ABC):
     def save(self, path: Path = None) -> None:
         """Salva o modelo treinado com seus metadados (formato dict compatível)."""
         if not path:
-            path = settings.MODELS_DIR / f"modelo_custo_{self.version}_{self.name}.joblib"
+            # Garantir que self.name seja string (pode ser enum)
+            if hasattr(self.name, 'value'):
+                model_name_str = self.name.value
+            elif isinstance(self.name, str):
+                model_name_str = self.name
+            else:
+                model_name_str = str(self.name)
+            path = settings.MODELS_DIR / f"modelo_custo_{self.version}_{model_name_str}.joblib"
 
         path.parent.mkdir(parents=True, exist_ok=True)
 
         model_data = {
             "model": self.model,
+            "processor": self.processor,  # Salvando o processador
             "columns": self.feature_columns,   # mantemos a chave 'columns' por compatibilidade
             "metrics": self.metrics,
             "version": self.version,
@@ -43,7 +52,14 @@ class BaseModel(ABC):
     def load(self, path: Path = None) -> None:
         """Carrega um modelo salvo. Aceita artefato em dict ou estimador puro."""
         if not path:
-            path = settings.MODELS_DIR / f"modelo_custo_{self.version}_{self.name}.joblib"
+            # Garantir que self.name seja string (pode ser enum)
+            if hasattr(self.name, 'value'):
+                model_name_str = self.name.value
+            elif isinstance(self.name, str):
+                model_name_str = self.name
+            else:
+                model_name_str = str(self.name)
+            path = settings.MODELS_DIR / f"modelo_custo_{self.version}_{model_name_str}.joblib"
 
         if not path.exists():
             raise FileNotFoundError(f"Modelo não encontrado: {path}")
@@ -53,6 +69,7 @@ class BaseModel(ABC):
         if isinstance(obj, dict):
             # Formato novo/compatível (o que você já tem no disco)
             self.model = obj.get("model", None)
+            self.processor = obj.get("processor", None)  # Carregando o processador
             # aceitar tanto 'columns' quanto 'feature_columns'
             self.feature_columns = obj.get("columns", obj.get("feature_columns", []))
             self.metrics = obj.get("metrics", {})

@@ -70,7 +70,17 @@ export async function middleware(request: NextRequest) {
 
     // Se não há token, não está autenticado - bloqueia acesso
     if (!token) {
-      console.log('[Middleware] Token não encontrado, redirecionando para /login')
+      console.log('[Middleware] Token não encontrado')
+      
+      // Se for uma requisição de API, retornar JSON 401
+      if (pathname.startsWith('/api/')) {
+        return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+      
+      // Se for uma página, redirecionar para login
       const url = new URL('/login', request.url)
       return NextResponse.redirect(url)
     }
@@ -116,7 +126,15 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next()
       }
       
-      // Se o token é inválido, redirecionamos para login
+      // Se for uma requisição de API, retornar JSON 401
+      if (pathname.startsWith('/api/')) {
+        return new NextResponse(JSON.stringify({ error: 'Unauthorized - Invalid token' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+      
+      // Se o token é inválido e for uma página, redirecionamos para login
       console.log('[Middleware] Redirecionando para /login devido a token inválido')
       const url = new URL('/login', request.url)
       return NextResponse.redirect(url)
@@ -124,7 +142,15 @@ export async function middleware(request: NextRequest) {
   } catch (error) {
     console.log('[Middleware] Erro de autenticação:', error instanceof Error ? error.message : 'Erro desconhecido')
     
-    // Determinar para onde redirecionar - para login
+    // Se for uma requisição de API, retornar JSON 500
+    if (pathname.startsWith('/api/')) {
+      return new NextResponse(JSON.stringify({ error: 'Internal server error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+    
+    // Se for uma página, redirecionar para login
     const url = new URL('/login', request.url)
     return NextResponse.redirect(url)
   }

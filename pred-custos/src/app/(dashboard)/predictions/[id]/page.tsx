@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
 interface PredictionDetail {
@@ -31,7 +31,10 @@ interface PredictionDetail {
   error: string | null
 }
 
-export default function PredictionDetailPage({ params }: { params: { id: string } }) {
+export default function PredictionDetailPage() {
+  const params = useParams()
+  const id = params?.id as string
+
   const [prediction, setPrediction] = useState<PredictionDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,10 +42,12 @@ export default function PredictionDetailPage({ params }: { params: { id: string 
 
   // Buscar detalhes da previsão
   useEffect(() => {
+    if (!id) return
+
     const fetchPrediction = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/predictions/${params.id}`)
+        const response = await fetch(`/api/predictions/${id}`)
 
         if (!response.ok) {
           if (response.status === 404) {
@@ -62,7 +67,7 @@ export default function PredictionDetailPage({ params }: { params: { id: string 
     }
 
     fetchPrediction()
-  }, [params.id])
+  }, [id])
 
   // Status da previsão formatado
   const getStatusInfo = (status: string) => {
@@ -207,10 +212,10 @@ export default function PredictionDetailPage({ params }: { params: { id: string 
                   <div className="text-center py-4">
                     <p className="text-sm text-gray-500">Custo de Transporte</p>
                     <p className="text-3xl font-bold text-green-600">
-                      €{prediction.output.euroPerKg.toFixed(2)}/kg
+                      €{Number(prediction.output.euroPerKg).toFixed(2)}/kg
                     </p>
                     <p className="text-sm text-gray-500 mt-2">
-                      Custo total: €{prediction.output.costTotal.toFixed(2)}
+                      Custo total: €{Number(prediction.output.costTotal).toFixed(2)}
                     </p>
                   </div>
                 ) : prediction.status === 'ERROR' ? (
@@ -238,17 +243,88 @@ export default function PredictionDetailPage({ params }: { params: { id: string 
           </div>
         </div>
 
-        {prediction.status === 'PENDING' && (
-          <div className="border-t px-6 py-4 bg-gray-50 flex justify-end">
-            <button
-              onClick={() => router.refresh()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-            >
-              Atualizar Status
-            </button>
+        {/* Detalhes Técnicos e Breakdown */}
+        {prediction.status === 'COMPLETED' && prediction.output && (
+          <div className="border-t border-gray-100 px-6 py-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-4">DETALHES TÉCNICOS</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Informações do Modelo */}
+              <div className="bg-gray-50 p-4 rounded-md">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Modelo</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Algoritmo:</span>
+                    <span className="text-sm font-medium">{prediction.output.modelUsed || prediction.output.breakdown?.model_used || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Versão:</span>
+                    <span className="text-sm font-medium">{prediction.output.modelVersion || prediction.output.breakdown?.version || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Lead Time:</span>
+                    <span className="text-sm font-medium">{prediction.output.breakdown?.lead_time_days || prediction.input.leadTimeDays || 'N/A'} dias</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Taxas e Índices */}
+              <div className="bg-gray-50 p-4 rounded-md">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Fatores de Custo</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Índice Combustível:</span>
+                    <span className="text-sm font-medium">{prediction.output.breakdown?.fuel_index || prediction.input.fuelIndex || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Multiplicador Taxas:</span>
+                    <span className="text-sm font-medium">
+                      {prediction.output.breakdown?.tax_multiplier
+                        ? `${((prediction.output.breakdown.tax_multiplier - 1) * 100).toFixed(0)}%`
+                        : (prediction.input.taxMultiplier ? `${((prediction.input.taxMultiplier - 1) * 100).toFixed(0)}%` : 'N/A')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Câmbio */}
+              <div className="bg-gray-50 p-4 rounded-md">
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Câmbio Utilizado</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600">Moeda Saída:</span>
+                    <span className="text-sm font-medium">{prediction.currency}</span>
+                  </div>
+                  {prediction.output.breakdown?.fx_used && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-600">BRL/EUR:</span>
+                        <span className="text-sm font-medium">{Number(prediction.output.breakdown.fx_used.BRL_EUR).toFixed(4)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-600">BRL/USD:</span>
+                        <span className="text-sm font-medium">{Number(prediction.output.breakdown.fx_used.BRL_USD).toFixed(4)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
+
+      {prediction.status === 'PENDING' && (
+        <div className="border-t px-6 py-4 bg-gray-50 flex justify-end">
+          <button
+            onClick={() => router.refresh()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+          >
+            Atualizar Status
+          </button>
+        </div>
+      )}
     </div>
+
   )
 }
