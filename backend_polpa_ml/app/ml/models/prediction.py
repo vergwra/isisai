@@ -190,6 +190,10 @@ class CustoModel(BaseModel):
             except Exception:
                 implied_unit = None
 
+            logger.info(f"[DEBUG] volume_ton from payload: {payload.volume_ton}")
+            logger.info(f"[DEBUG] Calculated kg: {kg}")
+            logger.info(f"[DEBUG] Raw model prediction (EUR): {pred_value}")
+            
             logger.debug(
                 f"[predict] total_eur={pred_value:.2f}, volume_ton={payload.volume_ton}, "
                 + (f"implied_eur_per_kg={implied_unit:.6f}" if implied_unit is not None else "implied_eur_per_kg=NA")
@@ -477,14 +481,62 @@ class CustoModel(BaseModel):
             if "custo_total_logistico_brl" not in df.columns:
                 raise ValueError("Coluna target 'custo_total_logistico_brl' não encontrada")
                 
-            X = df.drop("custo_total_logistico_brl", axis=1)
-            y = df["custo_total_logistico_brl"]
+            # 1. Verificar colunas necessárias
+            required_cols = ["custo_total_logistico_brl", "volume_ton"]
+            missing = [c for c in required_cols if c not in df.columns]
+            if missing:
+                raise ValueError(f"Colunas obrigatórias faltando: {missing}")
+
+            # 2. Garantir fx_brl_eur (se não existir, usar fallback ou erro?)
+            # O usuário disse que fx_brl_eur ≈ 5.5, vamos tentar usar coluna se existir, senão 5.5
+            if "fx_brl_eur" not in df.columns:
+                logger.warning("Coluna 'fx_brl_eur' não encontrada. Usando valor fixo 5.5 para conversão.")
+                df["fx_brl_eur"] = 5.5
+            
+            # 3. Calcular Target Unitário (EUR/kg)
+            # volume_kg = volume_ton * 1000
+            df["volume_kg"] = df["volume_ton"] * 1000.0
+            
+            # custo_total_eur = custo_total_logistico_brl / fx_brl_eur
+            df["custo_total_eur"] = df["custo_total_logistico_brl"] / df["fx_brl_eur"]
+            
+            # custo_eur_por_kg = custo_total_eur / volume_kg
+            # Evitar divisão por zero
+            df["custo_eur_por_kg"] = df["custo_total_eur"] / df["volume_kg"].replace(0, 1)
+            
+            # 4. Filtragem e Limpeza
+            initial_len = len(df)
+            
+            # Filtro de volume mínimo (500kg = 0.5 ton)
+            df = df[df["volume_kg"] >= 500].copy()
+            logger.info(f"Filtragem por volume (>= 500kg): {initial_len} -> {len(df)} registros")
+            
+            # Clipping do target [0.2, 25.0]
+            df["custo_eur_por_kg"] = df["custo_eur_por_kg"].clip(lower=0.2, upper=25.0)
+            logger.info("Target 'custo_eur_por_kg' limitado entre 0.2 e 25.0 EUR/kg")
+            
+            # 5. Preparar X e y
+            # Remover colunas auxiliares e o target original
+            cols_to_drop = [
+                "custo_total_logistico_brl", "custo_total_eur", 
+                "custo_eur_por_kg", "volume_kg"
+            ]
+            # Manter volume_ton em X pois é feature importante
+            
+            X = df.drop([c for c in cols_to_drop if c in df.columns], axis=1)
+            y = df["custo_eur_por_kg"]
             
             logger.info(f"[train_from_file] Features shape: {X.shape}, Target shape: {y.shape}")
+            logger.info(f"[train_from_file] Target stats: min={y.min()}, max={y.max()}, mean={y.mean()}")
             logger.info(f"[train_from_file] Tipos de dados em X:\n{X.dtypes}")
             
             # Treinar modelo (o método train() aplicará o encoding)
             metrics = self.train(X, y)
+            
+            # 6. Atualizar métricas com a unidade correta
+            metrics["target_unit"] = "eur_per_kg"
+            metrics["baseline_eur_per_kg"] = float(y.mean()) # Atualizar baseline com a média do treino
+            self.metrics = metrics
             
             # Salvar modelo
             self.save()

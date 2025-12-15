@@ -212,10 +212,12 @@ export default function PredictionDetailPage() {
                   <div className="text-center py-4">
                     <p className="text-sm text-gray-500">Custo de Transporte</p>
                     <p className="text-3xl font-bold text-green-600">
-                      €{Number(prediction.output.euroPerKg).toFixed(2)}/kg
+                      {prediction.currency === 'EUR' ? '€' : (prediction.currency === 'USD' ? '$' : 'R$')}
+                      {Number(prediction.output.euroPerKg).toFixed(2)}/kg
                     </p>
                     <p className="text-sm text-gray-500 mt-2">
-                      Custo total: €{Number(prediction.output.costTotal).toFixed(2)}
+                      Custo total: {prediction.currency === 'EUR' ? '€' : (prediction.currency === 'USD' ? '$' : 'R$')}
+                      {Number(prediction.output.costTotal).toFixed(2)}
                     </p>
                   </div>
                 ) : prediction.status === 'ERROR' ? (

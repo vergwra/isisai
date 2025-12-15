@@ -80,7 +80,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 </Link>
               </>
             )}
-
+            <button
+              onClick={() => logout()}
+              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-fit text-left"
+            >
+              Sair
+            </button>
             <div className="border-l border-gray-300 h-6 mx-2"></div>
 
             <div className="relative group">
@@ -97,12 +102,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   <div className="text-xs">{user?.email}</div>
                 </div>
                 <div className="border-t border-gray-100"></div>
-                <button
-                  onClick={() => logout()}
-                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                >
-                  Sair
-                </button>
               </div>
             </div>
           </nav>

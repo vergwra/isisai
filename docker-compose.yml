@@ -6,7 +6,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
     restart: always
     ports:
-      - "${DATABASE_PORT:-5432}:5432"
+      - "${DATABASE_PORT:-5433}:5432"
     environment:
       - POSTGRES_DB=${DATABASE_NAME:-isisai}
       - POSTGRES_USER=${DATABASE_USER:-postgres}
@@ -26,7 +26,7 @@ services:
       - redis-data:/data
     restart: always
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: redis-server --appendonly yes
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
