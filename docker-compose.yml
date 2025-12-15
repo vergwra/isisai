@@ -56,6 +56,7 @@ services:
       - API_CAMBIO=${API_CAMBIO:-https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL}
       - MODEL_VERSION=${MODEL_VERSION:-0.1.0}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-linear_regression}
+      - ML_BACKEND_URL=${ML_BACKEND_URL:-http://localhost:8000}
     depends_on:
       postgres:
         condition: service_healthy
