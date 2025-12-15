@@ -26,7 +26,7 @@ const adminRoutes = [
  */
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
-  
+
   console.log(`[Middleware] Verificando rota: ${pathname}`)
 
   // 1. Verifica se é uma rota pública (as únicas acessíveis sem token)
@@ -51,14 +51,14 @@ export async function middleware(request: NextRequest) {
   try {
     // 2. Tenta obter token de acesso (primeiro de cookies, depois do header)
     let token = request.cookies.get('access_token')?.value
-    
+
     console.log('[Middleware] Token nos cookies:', token ? 'Presente' : 'Ausente')
     if (token) {
       // Mostrar os primeiros e últimos caracteres do token para debug (não mostrar o token completo)
       console.log(`[Middleware] Token preview: ${token.substring(0, 5)}...${token.substring(token.length - 5)}`)
       console.log(`[Middleware] Token length: ${token.length}`)
     }
-    
+
     // Se não encontrou no cookie, tenta no header Authorization
     if (!token) {
       const authHeader = request.headers.get('authorization')
@@ -68,10 +68,12 @@ export async function middleware(request: NextRequest) {
       }
     }
 
+    const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+
     // Se não há token, não está autenticado - bloqueia acesso
-    if (!token) {
+    if (!token && !isPublicRoute) {
       console.log('[Middleware] Token não encontrado')
-      
+
       // Se for uma requisição de API, retornar JSON 401
       if (pathname.startsWith('/api/')) {
         return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
@@ -79,7 +81,7 @@ export async function middleware(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' }
         })
       }
-      
+
       // Se for uma página, redirecionar para login
       const url = new URL('/login', request.url)
       return NextResponse.redirect(url)
@@ -87,12 +89,12 @@ export async function middleware(request: NextRequest) {
 
     // 3. Verifica e decodifica o token
     try {
-      console.log('[Middleware] Tentando verificar token JWT, comprimento:', token.length);
-      console.log('[Middleware] Fragmento do token:', token.substring(0, 10) + '...' + token.substring(token.length - 10));
-      
-      const payload = await verifyAccessToken(token)
+      console.log('[Middleware] Tentando verificar token JWT, comprimento:', token?.length);
+      console.log('[Middleware] Fragmento do token:', token?.substring(0, 10) + '...' + token?.substring(token.length - 10));
+
+      const payload = await verifyAccessToken(token!)
       console.log(`[Middleware] Token válido, usuário: ${payload.email}, role: ${payload.role}`)
-  
+
       // 4. Verifica se é rota de admin e se o usuário tem permissão
       if (adminRoutes.some(route => pathname.startsWith(route))) {
         if (payload.role !== UserRole.ADMIN) {
@@ -104,13 +106,13 @@ export async function middleware(request: NextRequest) {
         }
         console.log('[Middleware] Acesso admin autorizado')
       }
-  
+
       // Adicionar informações do usuário ao request para uso nas rotas
       const requestHeaders = new Headers(request.headers)
       requestHeaders.set('x-user-id', payload.sub)
       requestHeaders.set('x-user-email', payload.email)
       requestHeaders.set('x-user-role', payload.role)
-      
+
       // Tudo ok - permitir acesso
       return NextResponse.next({
         request: {
@@ -119,13 +121,13 @@ export async function middleware(request: NextRequest) {
       })
     } catch (tokenError) {
       console.error('[Middleware] Erro na validação do token:', tokenError instanceof Error ? tokenError.message : 'Erro desconhecido')
-      
+
       // Evitar redirecionamento para login se já estiver em uma rota pública
       if (pathname === '/login' || pathname === '/register') {
         console.log('[Middleware] Erro de token em rota pública, permitindo acesso direto sem redirecionamento')
         return NextResponse.next()
       }
-      
+
       // Se for uma requisição de API, retornar JSON 401
       if (pathname.startsWith('/api/')) {
         return new NextResponse(JSON.stringify({ error: 'Unauthorized - Invalid token' }), {
@@ -133,7 +135,7 @@ export async function middleware(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' }
         })
       }
-      
+
       // Se o token é inválido e for uma página, redirecionamos para login
       console.log('[Middleware] Redirecionando para /login devido a token inválido')
       const url = new URL('/login', request.url)
@@ -141,7 +143,7 @@ export async function middleware(request: NextRequest) {
     }
   } catch (error) {
     console.log('[Middleware] Erro de autenticação:', error instanceof Error ? error.message : 'Erro desconhecido')
-    
+
     // Se for uma requisição de API, retornar JSON 500
     if (pathname.startsWith('/api/')) {
       return new NextResponse(JSON.stringify({ error: 'Internal server error' }), {
@@ -149,7 +151,7 @@ export async function middleware(request: NextRequest) {
         headers: { 'Content-Type': 'application/json' }
       })
     }
-    
+
     // Se for uma página, redirecionar para login
     const url = new URL('/login', request.url)
     return NextResponse.redirect(url)
